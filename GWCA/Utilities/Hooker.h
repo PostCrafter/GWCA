@@ -6,13 +6,13 @@ namespace GW {
 
 	// v1 hooker by 4D 1
 	class Hook {
-		BYTE* retour_func_;
-		BYTE* source_;
-		DWORD length_;
-	public:
+		void* tramp;
+		void* target;
+		size_t length;
 
-		static DWORD CalculateDetourLength(BYTE* _source);
-		BYTE* Detour(BYTE* _source, BYTE* _detour, const DWORD _length);
+	public:
+		static size_t CalculateDetourLength(void *source);
+		void* Detour(void *source, void *detour, size_t length);
 		void Retour();
 	};
 }

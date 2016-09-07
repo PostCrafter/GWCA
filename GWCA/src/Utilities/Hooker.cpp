@@ -4,59 +4,58 @@ extern "C" {
 #include "..\..\..\Dependencies\disasm\ld32.h"
 }
 
+#define REL_DIST(p1, p2) ((size_t)(((uintptr_t)p1) - ((uintptr_t)p2)))
+
 void GW::Hook::Retour() {
 	DWORD old_protection;
 
-	VirtualProtect(source_, length_, PAGE_READWRITE, &old_protection);
+	VirtualProtect(target, length, PAGE_READWRITE, &old_protection);
+	memcpy(target, tramp, length);
+	VirtualProtect(target, length, old_protection, &old_protection);
 
-	memcpy(source_, retour_func_, length_);
-
-	VirtualProtect(source_, length_, old_protection, &old_protection);
-
-	delete[] retour_func_;
+	delete[] tramp;
 }
 
-BYTE* GW::Hook::Detour(BYTE* _source, BYTE* _detour, const DWORD _length) {
+void* GW::Hook::Detour(void *target, void *detour, size_t length) {
 	DWORD old_protection;
 
-	source_ = _source;
-	length_ = _length;
-	retour_func_ = (BYTE*)malloc(length_ + 5);
-	VirtualProtect(retour_func_, length_ + 5, PAGE_EXECUTE_READWRITE, &old_protection);
+	this->target = target;
+	this->length = length;
 
-	memcpy(retour_func_, source_, length_);
+    char *tramp = new char[length + 5];
+    this->tramp = tramp;
 
-	retour_func_ += length_;
+	VirtualProtect(tramp, length + 5, PAGE_EXECUTE_READWRITE, &old_protection);
+	memcpy(tramp, target, length);
+	tramp += length;
+	tramp[0] = (char)0xE9;
+	*(DWORD*)(tramp + 1) = (DWORD)(REL_DIST(target, tramp) - 5);
 
-	retour_func_[0] = 0xE9;
-	*(DWORD*)(retour_func_ + 1) = (DWORD)((source_ + length_) - (retour_func_ + 5));
+	VirtualProtect(target, length, PAGE_EXECUTE_READWRITE, &old_protection);
+    char *_target = (char*)target;
+	_target[0] = (char)0xE9;
+	*(DWORD*)(_target + 1) = (DWORD)(REL_DIST(detour, _target) - 5);
 
-	VirtualProtect(source_, length_, PAGE_EXECUTE_READWRITE, &old_protection);
+#ifndef NDEBUG
+	for (DWORD i = 5; i < length; i++)
+		_target[i] = (char)0x90;
+#endif
 
-	source_[0] = 0xE9;
-	*(DWORD*)(source_ + 1) = (DWORD)(_detour - (source_ + 5));
-
-	if (length_ != 5)
-		for (DWORD i = 5; i < length_; i++)
-			source_[i] = 0x90;
-
-	VirtualProtect(source_, length_, old_protection, &old_protection);
-
-	retour_func_ -= length_;
-
-	return retour_func_;
+	VirtualProtect(target, length, old_protection, &old_protection);
+	return this->target;
 }
 
-DWORD GW::Hook::CalculateDetourLength(BYTE* _source) {
+size_t GW::Hook::CalculateDetourLength(void *source) {
 
-	DWORD len = 0;
-	DWORD current_op;
+	unsigned int len = 0;
+	unsigned int current_op;
+    char *src = (char*)source;
 
 	do {
-		current_op = length_disasm((void*)_source);
+		current_op = length_disasm(src);
 		if (current_op != 0) {
 			len += current_op;
-			_source += current_op;
+			src += current_op;
 		}
 	} while (len < 5);
 
